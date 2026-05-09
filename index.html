@@ -317,6 +317,18 @@
       letter-spacing: 0.06em;
     }
 
+    /* Viewfinder hide after scan */
+    .viewfinder-wrap {
+      transition: opacity 0.3s ease, max-height 0.4s ease, margin-bottom 0.4s ease;
+      max-height: 600px;
+    }
+    .viewfinder-wrap.hidden-after-scan {
+      opacity: 0;
+      max-height: 0;
+      margin-bottom: -16px; /* collapse the gap */
+      pointer-events: none;
+    }
+
     /* ── Status bar ── */
     #statusBar {
       width: 100%;
@@ -368,6 +380,7 @@
     <div class="result-actions">
       <button class="btn btn-secondary" id="btnCopy">Copy</button>
       <button class="btn btn-primary" id="btnOpen" style="display:none">Open URL</button>
+      <button class="btn btn-secondary" id="btnRescan">Scan again</button>
     </div>
   </div>
 
@@ -394,6 +407,7 @@
   const video          = document.getElementById('video');
   const btnCopy        = document.getElementById('btnCopy');
   const btnOpen        = document.getElementById('btnOpen');
+  const btnRescan      = document.getElementById('btnRescan');
   const btnClearHistory = document.getElementById('btnClearHistory');
   const resultCard     = document.getElementById('resultCard');
   const resultContent  = document.getElementById('resultContent');
@@ -456,6 +470,10 @@
     resultContent.innerHTML = sanitizeDisplay(text);
     resultCard.classList.add('visible');
 
+    // Stop camera and hide viewfinder
+    stopScan(true);
+    viewfinderWrap.classList.add('hidden-after-scan');
+
     if (type === 'url') {
       urlWarning.classList.add('visible');
       btnOpen.style.display = '';
@@ -471,6 +489,19 @@
 
     addHistory(text, type);
   }
+
+  // ── Rescan ──
+  function rescan() {
+    resultCard.classList.remove('visible');
+    urlWarning.classList.remove('visible');
+    btnOpen.style.display = 'none';
+    resultContent.innerHTML = '';
+    viewfinderWrap.classList.remove('hidden-after-scan');
+    idleOverlay.classList.remove('hidden');
+    setStatus('Tap the viewfinder to start');
+  }
+
+  btnRescan.addEventListener('click', rescan);
 
   // ── Copy ──
   btnCopy.addEventListener('click', async () => {
@@ -556,8 +587,9 @@
     }
   }
 
-  // ── Stop scanning (internal — called on visibility change) ──
-  function stopScan() {
+  // ── Stop scanning ──
+  // silent=true: just kill the camera, don't touch UI (caller handles it)
+  function stopScan(silent = false) {
     if (!scanning) return;
     try {
       if (codeReader?._controls) codeReader._controls.stop();
@@ -569,8 +601,10 @@
     scanning   = false;
     codeReader = null;
     viewfinderWrap.classList.remove('scanning');
-    idleOverlay.classList.remove('hidden');
-    setStatus('Tap to scan');
+    if (!silent) {
+      idleOverlay.classList.remove('hidden');
+      setStatus('Tap to scan');
+    }
   }
 
   // Tap viewfinder to start
