@@ -51,46 +51,6 @@
       padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
     }
 
-    /* ── Header ── */
-    header {
-      width: 100%;
-      padding: 20px 24px 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    .logo {
-      font-family: 'Syne', sans-serif;
-      font-weight: 800;
-      font-size: 1.1rem;
-      letter-spacing: -0.02em;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .logo-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: var(--accent);
-      display: inline-block;
-      animation: pulse 2s ease-in-out infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(0.7); }
-    }
-    .privacy-badge {
-      font-size: 0.62rem;
-      color: var(--muted);
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      border: 1px solid var(--border);
-      padding: 4px 10px;
-      border-radius: 999px;
-    }
-
     /* ── Main layout ── */
     main {
       flex: 1;
@@ -199,14 +159,12 @@
       text-align: center;
     }
 
-    /* ── Controls ── */
-    .controls {
-      width: 100%;
-      display: flex;
-      gap: 10px;
-    }
+    /* Viewfinder is tappable */
+    .viewfinder-wrap { cursor: pointer; }
+    .viewfinder-wrap:active { opacity: 0.92; }
+
+    /* ── Controls ── (copy button only) */
     .btn {
-      flex: 1;
       font-family: 'DM Mono', monospace;
       font-size: 0.78rem;
       letter-spacing: 0.04em;
@@ -231,33 +189,7 @@
       color: var(--muted);
     }
     .btn-secondary:hover { border-color: #444; color: var(--text); }
-    .btn-danger {
-      background: transparent;
-      color: var(--danger);
-      border-color: #3a1515;
-    }
-    .btn-danger:hover { border-color: var(--danger); }
     .btn:disabled { opacity: 0.35; pointer-events: none; }
-
-    /* Camera select */
-    .cam-select-wrap {
-      width: 100%;
-    }
-    select#camSelect {
-      width: 100%;
-      font-family: 'DM Mono', monospace;
-      font-size: 0.75rem;
-      color: var(--muted);
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 14px;
-      outline: none;
-      cursor: pointer;
-      -webkit-appearance: none;
-      appearance: none;
-    }
-    select#camSelect:focus { border-color: #444; }
 
     /* ── Result card ── */
     .result-card {
@@ -385,21 +317,6 @@
       letter-spacing: 0.06em;
     }
 
-    /* ── Footer ── */
-    footer {
-      width: 100%;
-      padding: 10px 24px 16px;
-      border-top: 1px solid var(--border);
-      flex-shrink: 0;
-      text-align: center;
-    }
-    .footer-note {
-      font-size: 0.6rem;
-      color: #333;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-
     /* ── Status bar ── */
     #statusBar {
       width: 100%;
@@ -413,14 +330,6 @@
   </style>
 </head>
 <body>
-
-<header>
-  <div class="logo">
-    <span class="logo-dot"></span>
-    QR Scanner
-  </div>
-  <span class="privacy-badge">On-device only</span>
-</header>
 
 <main>
   <!-- Viewfinder -->
@@ -439,25 +348,12 @@
           <rect x="14" y="14" width="3" height="3" rx="0.5"/><rect x="18" y="14" width="3" height="3" rx="0.5"/><rect x="14" y="18" width="3" height="3" rx="0.5"/><rect x="18" y="18" width="3" height="3" rx="0.5"/>
         </svg>
       </div>
-      <div class="idle-text">Tap Start to<br>scan a QR code</div>
+      <div class="idle-text">Tap to scan<br>a QR code</div>
     </div>
-  </div>
-
-  <!-- Camera selector -->
-  <div class="cam-select-wrap">
-    <select id="camSelect">
-      <option value="">— Select camera —</option>
-    </select>
   </div>
 
   <!-- Status -->
   <div id="statusBar">Ready</div>
-
-  <!-- Controls -->
-  <div class="controls">
-    <button class="btn btn-primary" id="btnStart">Start</button>
-    <button class="btn btn-danger" id="btnStop" disabled>Stop</button>
-  </div>
 
   <!-- Result -->
   <div class="result-card" id="resultCard">
@@ -487,10 +383,6 @@
   </div>
 </main>
 
-<footer>
-  <div class="footer-note">All decoding happens on your device &nbsp;·&nbsp; Nothing is sent to any server</div>
-</footer>
-
 <script>
 (() => {
   // ── State ──
@@ -499,23 +391,19 @@
   let history    = [];
   let lastResult = '';
 
-  const video       = document.getElementById('video');
-  const camSelect   = document.getElementById('camSelect');
-  const btnStart    = document.getElementById('btnStart');
-  const btnStop     = document.getElementById('btnStop');
-  const btnCopy     = document.getElementById('btnCopy');
-  const btnOpen     = document.getElementById('btnOpen');
+  const video          = document.getElementById('video');
+  const btnCopy        = document.getElementById('btnCopy');
+  const btnOpen        = document.getElementById('btnOpen');
   const btnClearHistory = document.getElementById('btnClearHistory');
-  const resultCard  = document.getElementById('resultCard');
-  const resultContent = document.getElementById('resultContent');
-  const urlWarning  = document.getElementById('urlWarning');
-  const historyList = document.getElementById('historyList');
-  const historyEmpty = document.getElementById('historyEmpty');
-  const idleOverlay = document.getElementById('idleOverlay');
+  const resultCard     = document.getElementById('resultCard');
+  const resultContent  = document.getElementById('resultContent');
+  const urlWarning     = document.getElementById('urlWarning');
+  const historyList    = document.getElementById('historyList');
+  const historyEmpty   = document.getElementById('historyEmpty');
+  const idleOverlay    = document.getElementById('idleOverlay');
   const viewfinderWrap = document.getElementById('viewfinderWrap');
-  const scanLine    = document.getElementById('scanLine');
-  const flashOverlay = document.getElementById('flashOverlay');
-  const statusBar   = document.getElementById('statusBar');
+  const flashOverlay   = document.getElementById('flashOverlay');
+  const statusBar      = document.getElementById('statusBar');
 
   // ── Utility ──
   function setStatus(msg) { statusBar.textContent = msg; }
@@ -538,35 +426,17 @@
     return d.innerHTML;
   }
 
-  // ── Cameras ──
-  async function populateCameras() {
+  // ── Get back camera deviceId ──
+  async function getBackCameraId() {
     try {
-      // Request permission first so labels are populated
+      // Trigger permission prompt first so labels are available
       await navigator.mediaDevices.getUserMedia({ video: true });
       const devices = await navigator.mediaDevices.enumerateDevices();
       const cams = devices.filter(d => d.kind === 'videoinput');
-      camSelect.innerHTML = '';
-      if (cams.length === 0) {
-        camSelect.innerHTML = '<option value="">No cameras found</option>';
-        return;
-      }
-      cams.forEach((cam, i) => {
-        const opt = document.createElement('option');
-        opt.value = cam.deviceId;
-        const label = cam.label || `Camera ${i + 1}`;
-        // Prefer back camera by default
-        opt.textContent = label;
-        camSelect.appendChild(opt);
-      });
-      // Auto-select back/environment camera
-      const backIdx = cams.findIndex(c =>
-        /back|rear|environment/i.test(c.label)
-      );
-      if (backIdx !== -1) camSelect.selectedIndex = backIdx;
-      setStatus(`${cams.length} camera${cams.length > 1 ? 's' : ''} found`);
-    } catch (err) {
-      setStatus('Camera permission denied');
-      btnStart.disabled = true;
+      const back = cams.find(c => /back|rear|environment/i.test(c.label));
+      return back ? back.deviceId : (cams[0]?.deviceId ?? null);
+    } catch {
+      return null;
     }
   }
 
@@ -648,16 +518,15 @@
   // ── Start scanning ──
   async function startScan() {
     if (scanning) return;
-    const deviceId = camSelect.value;
-    if (!deviceId) { setStatus('Select a camera first'); return; }
 
     try {
+      const deviceId = await getBackCameraId();
+      if (!deviceId) { setStatus('No camera found or permission denied'); return; }
+
       codeReader = new ZXing.BrowserQRCodeReader();
       scanning   = true;
       lastResult = '';
 
-      btnStart.disabled = true;
-      btnStop.disabled  = false;
       idleOverlay.classList.add('hidden');
       viewfinderWrap.classList.add('scanning');
       setStatus('Scanning…');
@@ -668,7 +537,7 @@
         (result, err) => {
           if (!result) return;
           const text = result.getText();
-          if (text === lastResult) return; // debounce duplicate
+          if (text === lastResult) return;
           lastResult = text;
 
           doFlash();
@@ -677,12 +546,9 @@
         }
       );
 
-      // Store controls to stop later
       codeReader._controls = controls;
     } catch (err) {
       scanning = false;
-      btnStart.disabled = false;
-      btnStop.disabled  = true;
       viewfinderWrap.classList.remove('scanning');
       idleOverlay.classList.remove('hidden');
       setStatus('Error: ' + (err.message || 'Could not start camera'));
@@ -690,7 +556,7 @@
     }
   }
 
-  // ── Stop scanning ──
+  // ── Stop scanning (internal — called on visibility change) ──
   function stopScan() {
     if (!scanning) return;
     try {
@@ -702,15 +568,13 @@
     } catch {}
     scanning   = false;
     codeReader = null;
-    btnStart.disabled = false;
-    btnStop.disabled  = true;
     viewfinderWrap.classList.remove('scanning');
     idleOverlay.classList.remove('hidden');
-    setStatus('Stopped');
+    setStatus('Tap to scan');
   }
 
-  btnStart.addEventListener('click', startScan);
-  btnStop.addEventListener('click', stopScan);
+  // Tap viewfinder to start
+  viewfinderWrap.addEventListener('click', startScan);
 
   // Stop on page hide (tab switch, lock screen)
   document.addEventListener('visibilitychange', () => {
@@ -718,8 +582,8 @@
   });
 
   // ── Init ──
-  populateCameras();
   renderHistory();
+  setStatus('Tap the viewfinder to start');
 
 })();
 </script>
