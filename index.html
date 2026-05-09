@@ -426,17 +426,19 @@
     return d.innerHTML;
   }
 
-  // ── Get back camera deviceId ──
-  async function getBackCameraId() {
+  // ── Camera init (runs once on page load) ──
+  let cachedDeviceId = null;
+
+  async function initCamera() {
     try {
-      // Trigger permission prompt first so labels are available
       await navigator.mediaDevices.getUserMedia({ video: true });
       const devices = await navigator.mediaDevices.enumerateDevices();
       const cams = devices.filter(d => d.kind === 'videoinput');
       const back = cams.find(c => /back|rear|environment/i.test(c.label));
-      return back ? back.deviceId : (cams[0]?.deviceId ?? null);
+      cachedDeviceId = back ? back.deviceId : (cams[0]?.deviceId ?? null);
+      if (!cachedDeviceId) setStatus('No camera found');
     } catch {
-      return null;
+      setStatus('Camera permission denied');
     }
   }
 
@@ -518,11 +520,9 @@
   // ── Start scanning ──
   async function startScan() {
     if (scanning) return;
+    if (!cachedDeviceId) { setStatus('No camera available'); return; }
 
     try {
-      const deviceId = await getBackCameraId();
-      if (!deviceId) { setStatus('No camera found or permission denied'); return; }
-
       codeReader = new ZXing.BrowserQRCodeReader();
       scanning   = true;
       lastResult = '';
@@ -532,7 +532,7 @@
       setStatus('Scanning…');
 
       const controls = await codeReader.decodeFromVideoDevice(
-        deviceId,
+        cachedDeviceId,
         video,
         (result, err) => {
           if (!result) return;
@@ -582,6 +582,7 @@
   });
 
   // ── Init ──
+  initCamera();
   renderHistory();
   setStatus('Tap the viewfinder to start');
 
