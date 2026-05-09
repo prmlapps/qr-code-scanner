@@ -561,6 +561,12 @@
     if (scanning) return;
     if (!cachedStream) { setStatus('No camera available'); return; }
 
+    // Stop any previous reader instance before creating a new one
+    if (codeReader) {
+      try { codeReader._controls?.stop(); } catch {}
+      codeReader = null;
+    }
+
     try {
       // Re-enable the cached stream's tracks (no new permission prompt)
       cachedStream.getVideoTracks().forEach(t => { t.enabled = true; });
@@ -588,9 +594,11 @@
         }
       );
 
-      codeReader._controls = controls;
+      // Only store controls if we're still in an active scan session
+      if (codeReader) codeReader._controls = controls;
     } catch (err) {
       scanning = false;
+      codeReader = null;
       viewfinderWrap.classList.remove('scanning');
       idleOverlay.classList.remove('hidden');
       setStatus('Error: ' + (err.message || 'Could not start camera'));
@@ -602,14 +610,15 @@
   // silent=true: just pause the camera, don't touch UI (caller handles it)
   function stopScan(silent = false) {
     if (!scanning) return;
+    scanning = false;
     try {
-      if (codeReader?._controls) codeReader._controls.stop();
-      // Disable tracks (keeps stream alive) rather than stopping them
+      codeReader?._controls?.stop();
+    } catch {}
+    codeReader = null;
+    try {
       if (cachedStream) cachedStream.getVideoTracks().forEach(t => { t.enabled = false; });
       video.srcObject = null;
     } catch {}
-    scanning   = false;
-    codeReader = null;
     viewfinderWrap.classList.remove('scanning');
     if (!silent) {
       idleOverlay.classList.remove('hidden');
