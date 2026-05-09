@@ -638,9 +638,8 @@
   });
 
   // ── Init ──
-  initCamera();
   renderHistory();
-  setStatus('Tap the viewfinder to start');
+  initCamera().then(startScan);
 
 })();
 </script>
