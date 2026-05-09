@@ -564,15 +564,19 @@
     if (scanning) return;
     if (!cachedStream) { setStatus('No camera available'); return; }
 
-    // Stop any previous reader instance before creating a new one
+    // Clean up any previous reader
     if (codeReader) {
       try { codeReader._controls?.stop(); } catch {}
       codeReader = null;
     }
 
     try {
-      // Re-enable the cached stream's tracks (no new permission prompt)
+      // Re-enable tracks on the cached stream (no new permission prompt)
       cachedStream.getVideoTracks().forEach(t => { t.enabled = true; });
+
+      // Attach stream directly to the video element
+      video.srcObject = cachedStream;
+      await video.play().catch(() => {});
 
       codeReader = new ZXing.BrowserQRCodeReader();
       scanning   = true;
@@ -582,8 +586,9 @@
       viewfinderWrap.classList.add('scanning');
       setStatus('Scanning…');
 
-      const controls = await codeReader.decodeFromVideoDevice(
-        cachedDeviceId,
+      // Use decodeFromStream so ZXing never calls getUserMedia itself
+      const controls = await codeReader.decodeFromStream(
+        cachedStream,
         video,
         (result, err) => {
           if (!result) return;
@@ -597,7 +602,6 @@
         }
       );
 
-      // Only store controls if we're still in an active scan session
       if (codeReader) codeReader._controls = controls;
     } catch (err) {
       scanning = false;
@@ -618,9 +622,10 @@
       codeReader?._controls?.stop();
     } catch {}
     codeReader = null;
+    // Disable tracks to turn off the camera indicator light,
+    // but keep srcObject attached so re-enabling needs no new permission
     try {
       if (cachedStream) cachedStream.getVideoTracks().forEach(t => { t.enabled = false; });
-      video.srcObject = null;
     } catch {}
     viewfinderWrap.classList.remove('scanning');
     if (!silent) {
