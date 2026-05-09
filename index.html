@@ -497,8 +497,7 @@
     btnOpen.style.display = 'none';
     resultContent.innerHTML = '';
     viewfinderWrap.classList.remove('hidden-after-scan');
-    idleOverlay.classList.remove('hidden');
-    setStatus('Tap the viewfinder to start');
+    startScan();
   }
 
   btnRescan.addEventListener('click', rescan);
