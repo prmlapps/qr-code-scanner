@@ -14,7 +14,7 @@
   <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22QR%20Scanner%22%2C%22short_name%22%3A%22QR%20Scan%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230a0a0a%22%2C%22theme_color%22%3A%22%230a0a0a%22%7D" />
 
   <!-- zxing-js QR decoder — runs 100% client-side, no data leaves device -->
-  <script src="https://unpkg.com/@zxing/browser@0.1.4/umd/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
@@ -652,7 +652,7 @@
     if (!deviceId) { setStatus('Select a camera first'); return; }
 
     try {
-      codeReader = new ZXingBrowser.BrowserQRCodeReader();
+      codeReader = new ZXing.BrowserQRCodeReader();
       scanning   = true;
       lastResult = '';
 
