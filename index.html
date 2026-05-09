@@ -442,14 +442,23 @@
 
   // ── Camera init (runs once on page load) ──
   let cachedDeviceId = null;
+  let cachedStream   = null;
 
   async function initCamera() {
     try {
-      await navigator.mediaDevices.getUserMedia({ video: true });
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cams = devices.filter(d => d.kind === 'videoinput');
-      const back = cams.find(c => /back|rear|environment/i.test(c.label));
-      cachedDeviceId = back ? back.deviceId : (cams[0]?.deviceId ?? null);
+      // Request back camera by default; keep the stream alive for reuse
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } }
+      });
+      cachedStream = stream;
+
+      // Derive deviceId from the live track so we never need to ask again
+      const track = stream.getVideoTracks()[0];
+      cachedDeviceId = track.getSettings().deviceId ?? null;
+
+      // Pause the tracks until the user taps to scan
+      stream.getVideoTracks().forEach(t => { t.enabled = false; });
+
       if (!cachedDeviceId) setStatus('No camera found');
     } catch {
       setStatus('Camera permission denied');
@@ -550,9 +559,12 @@
   // ── Start scanning ──
   async function startScan() {
     if (scanning) return;
-    if (!cachedDeviceId) { setStatus('No camera available'); return; }
+    if (!cachedStream) { setStatus('No camera available'); return; }
 
     try {
+      // Re-enable the cached stream's tracks (no new permission prompt)
+      cachedStream.getVideoTracks().forEach(t => { t.enabled = true; });
+
       codeReader = new ZXing.BrowserQRCodeReader();
       scanning   = true;
       lastResult = '';
@@ -587,15 +599,14 @@
   }
 
   // ── Stop scanning ──
-  // silent=true: just kill the camera, don't touch UI (caller handles it)
+  // silent=true: just pause the camera, don't touch UI (caller handles it)
   function stopScan(silent = false) {
     if (!scanning) return;
     try {
       if (codeReader?._controls) codeReader._controls.stop();
-      if (video.srcObject) {
-        video.srcObject.getTracks().forEach(t => t.stop());
-        video.srcObject = null;
-      }
+      // Disable tracks (keeps stream alive) rather than stopping them
+      if (cachedStream) cachedStream.getVideoTracks().forEach(t => { t.enabled = false; });
+      video.srcObject = null;
     } catch {}
     scanning   = false;
     codeReader = null;
