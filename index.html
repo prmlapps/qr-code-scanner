@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="QR Scan" />
+  <meta name="description" content="Secure, private QR code scanner. No data leaves your device." />
+  <title>QR Scanner</title>
+
+  <!-- PWA manifest inline as data URI to keep single-file -->
+  <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22QR%20Scanner%22%2C%22short_name%22%3A%22QR%20Scan%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230a0a0a%22%2C%22theme_color%22%3A%22%230a0a0a%22%7D" />
+
+  <!-- zxing-js QR decoder — runs 100% client-side, no data leaves device -->
+  <script src="https://unpkg.com/@zxing/browser@0.1.4/umd/index.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
+
+    :root {
+      --bg:        #0a0a0a;
+      --surface:   #111111;
+      --border:    #222222;
+      --accent:    #c8f05a;
+      --accent2:   #5af0c8;
+      --text:      #f0f0f0;
+      --muted:     #666666;
+      --danger:    #f05a5a;
+      --radius:    16px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100dvh;
+      padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+    }
+
+    /* ── Header ── */
+    header {
+      width: 100%;
+      padding: 20px 24px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .logo {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 1.1rem;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .logo-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: inline-block;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.7); }
+    }
+    .privacy-badge {
+      font-size: 0.62rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+
+    /* ── Main layout ── */
+    main {
+      flex: 1;
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 20px 0;
+      overflow-y: auto;
+      gap: 16px;
+    }
+
+    /* ── Viewfinder ── */
+    .viewfinder-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: #050505;
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* Corner brackets */
+    .corner {
+      position: absolute;
+      width: 28px; height: 28px;
+      border-color: var(--accent);
+      border-style: solid;
+      z-index: 2;
+    }
+    .corner-tl { top: 14px; left: 14px; border-width: 2px 0 0 2px; border-radius: 4px 0 0 0; }
+    .corner-tr { top: 14px; right: 14px; border-width: 2px 2px 0 0; border-radius: 0 4px 0 0; }
+    .corner-bl { bottom: 14px; left: 14px; border-width: 0 0 2px 2px; border-radius: 0 0 0 4px; }
+    .corner-br { bottom: 14px; right: 14px; border-width: 0 2px 2px 0; border-radius: 0 0 4px 0; }
+
+    /* Scan line */
+    .scan-line {
+      position: absolute;
+      left: 14px; right: 14px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      top: 14px;
+      animation: scanline 2.5s ease-in-out infinite;
+      z-index: 2;
+      opacity: 0;
+    }
+    .scanning .scan-line { opacity: 1; }
+    @keyframes scanline {
+      0% { top: 14px; }
+      50% { top: calc(100% - 14px); }
+      100% { top: 14px; }
+    }
+
+    /* Success flash */
+    .flash-overlay {
+      position: absolute;
+      inset: 0;
+      background: var(--accent);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 3;
+      border-radius: var(--radius);
+      transition: opacity 0.05s;
+    }
+    .flash-overlay.flash { animation: flashAnim 0.4s ease forwards; }
+    @keyframes flashAnim {
+      0%   { opacity: 0.55; }
+      100% { opacity: 0; }
+    }
+
+    /* Idle state overlay */
+    .idle-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      z-index: 4;
+      background: rgba(10,10,10,0.85);
+      transition: opacity 0.3s;
+    }
+    .idle-overlay.hidden { opacity: 0; pointer-events: none; }
+    .idle-icon {
+      width: 64px; height: 64px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .idle-icon svg { opacity: 0.5; }
+    .idle-text {
+      font-size: 0.75rem;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    /* ── Controls ── */
+    .controls {
+      width: 100%;
+      display: flex;
+      gap: 10px;
+    }
+    .btn {
+      flex: 1;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+      padding: 13px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+      outline: none;
+      text-transform: uppercase;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary {
+      background: var(--accent);
+      color: #0a0a0a;
+      border-color: var(--accent);
+      font-weight: 500;
+    }
+    .btn-primary:hover { background: #d4f570; }
+    .btn-secondary {
+      background: transparent;
+      color: var(--muted);
+    }
+    .btn-secondary:hover { border-color: #444; color: var(--text); }
+    .btn-danger {
+      background: transparent;
+      color: var(--danger);
+      border-color: #3a1515;
+    }
+    .btn-danger:hover { border-color: var(--danger); }
+    .btn:disabled { opacity: 0.35; pointer-events: none; }
+
+    /* Camera select */
+    .cam-select-wrap {
+      width: 100%;
+    }
+    select#camSelect {
+      width: 100%;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      outline: none;
+      cursor: pointer;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    select#camSelect:focus { border-color: #444; }
+
+    /* ── Result card ── */
+    .result-card {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+      animation: slideUp 0.25s ease;
+    }
+    .result-card.visible { display: flex; }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .result-label {
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .result-content {
+      font-size: 0.88rem;
+      color: var(--text);
+      word-break: break-all;
+      line-height: 1.6;
+      max-height: 110px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .result-content::-webkit-scrollbar { width: 3px; }
+    .result-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* URL warning */
+    .url-warning {
+      display: none;
+      align-items: flex-start;
+      gap: 10px;
+      background: #1a0f0f;
+      border: 1px solid #3a1515;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 0.72rem;
+      color: #e08080;
+      line-height: 1.5;
+    }
+    .url-warning.visible { display: flex; }
+    .url-warning svg { flex-shrink: 0; margin-top: 1px; }
+
+    .result-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .result-actions .btn { font-size: 0.72rem; padding: 10px 14px; }
+
+    /* ── History ── */
+    .history-wrap {
+      width: 100%;
+      padding-bottom: 24px;
+    }
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .history-title {
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .history-clear {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 2px 6px;
+    }
+    .history-clear:hover { color: var(--danger); }
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .history-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .history-item:hover { border-color: #333; }
+    .history-item-text {
+      flex: 1;
+      font-size: 0.75rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .history-item-type {
+      font-size: 0.58rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent2);
+      flex-shrink: 0;
+    }
+    .history-empty {
+      font-size: 0.7rem;
+      color: #333;
+      text-align: center;
+      padding: 16px 0;
+      letter-spacing: 0.06em;
+    }
+
+    /* ── Footer ── */
+    footer {
+      width: 100%;
+      padding: 10px 24px 16px;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      text-align: center;
+    }
+    .footer-note {
+      font-size: 0.6rem;
+      color: #333;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    /* ── Status bar ── */
+    #statusBar {
+      width: 100%;
+      font-size: 0.68rem;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      padding: 4px 2px;
+      min-height: 20px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <span class="logo-dot"></span>
+    QR Scanner
+  </div>
+  <span class="privacy-badge">On-device only</span>
+</header>
+
+<main>
+  <!-- Viewfinder -->
+  <div class="viewfinder-wrap" id="viewfinderWrap">
+    <video id="video" autoplay muted playsinline></video>
+    <div class="corner corner-tl"></div>
+    <div class="corner corner-tr"></div>
+    <div class="corner corner-bl"></div>
+    <div class="corner corner-br"></div>
+    <div class="scan-line" id="scanLine"></div>
+    <div class="flash-overlay" id="flashOverlay"></div>
+    <div class="idle-overlay" id="idleOverlay">
+      <div class="idle-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#f0f0f0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="3" height="3" rx="0.5"/><rect x="18" y="14" width="3" height="3" rx="0.5"/><rect x="14" y="18" width="3" height="3" rx="0.5"/><rect x="18" y="18" width="3" height="3" rx="0.5"/>
+        </svg>
+      </div>
+      <div class="idle-text">Tap Start to<br>scan a QR code</div>
+    </div>
+  </div>
+
+  <!-- Camera selector -->
+  <div class="cam-select-wrap">
+    <select id="camSelect">
+      <option value="">— Select camera —</option>
+    </select>
+  </div>
+
+  <!-- Status -->
+  <div id="statusBar">Ready</div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button class="btn btn-primary" id="btnStart">Start</button>
+    <button class="btn btn-danger" id="btnStop" disabled>Stop</button>
+  </div>
+
+  <!-- Result -->
+  <div class="result-card" id="resultCard">
+    <div class="result-label">Decoded content</div>
+    <div class="result-content" id="resultContent"></div>
+    <div class="url-warning" id="urlWarning">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <span>This QR code contains a URL. Verify the address before opening it — QR codes can link to malicious sites.</span>
+    </div>
+    <div class="result-actions">
+      <button class="btn btn-secondary" id="btnCopy">Copy</button>
+      <button class="btn btn-primary" id="btnOpen" style="display:none">Open URL</button>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="history-wrap">
+    <div class="history-header">
+      <span class="history-title">Session history</span>
+      <button class="history-clear" id="btnClearHistory">Clear</button>
+    </div>
+    <div class="history-list" id="historyList">
+      <div class="history-empty" id="historyEmpty">No scans yet</div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="footer-note">All decoding happens on your device &nbsp;·&nbsp; Nothing is sent to any server</div>
+</footer>
+
+<script>
+(() => {
+  // ── State ──
+  let codeReader = null;
+  let scanning   = false;
+  let history    = [];
+  let lastResult = '';
+
+  const video       = document.getElementById('video');
+  const camSelect   = document.getElementById('camSelect');
+  const btnStart    = document.getElementById('btnStart');
+  const btnStop     = document.getElementById('btnStop');
+  const btnCopy     = document.getElementById('btnCopy');
+  const btnOpen     = document.getElementById('btnOpen');
+  const btnClearHistory = document.getElementById('btnClearHistory');
+  const resultCard  = document.getElementById('resultCard');
+  const resultContent = document.getElementById('resultContent');
+  const urlWarning  = document.getElementById('urlWarning');
+  const historyList = document.getElementById('historyList');
+  const historyEmpty = document.getElementById('historyEmpty');
+  const idleOverlay = document.getElementById('idleOverlay');
+  const viewfinderWrap = document.getElementById('viewfinderWrap');
+  const scanLine    = document.getElementById('scanLine');
+  const flashOverlay = document.getElementById('flashOverlay');
+  const statusBar   = document.getElementById('statusBar');
+
+  // ── Utility ──
+  function setStatus(msg) { statusBar.textContent = msg; }
+
+  function isURL(str) {
+    try { const u = new URL(str); return u.protocol === 'https:' || u.protocol === 'http:'; }
+    catch { return false; }
+  }
+
+  function classify(str) {
+    if (isURL(str)) return 'url';
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(str)) return 'email';
+    if (/^[\+]?[\d\s\-().]{7,}$/.test(str)) return 'phone';
+    return 'text';
+  }
+
+  function sanitizeDisplay(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  // ── Cameras ──
+  async function populateCameras() {
+    try {
+      // Request permission first so labels are populated
+      await navigator.mediaDevices.getUserMedia({ video: true });
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d => d.kind === 'videoinput');
+      camSelect.innerHTML = '';
+      if (cams.length === 0) {
+        camSelect.innerHTML = '<option value="">No cameras found</option>';
+        return;
+      }
+      cams.forEach((cam, i) => {
+        const opt = document.createElement('option');
+        opt.value = cam.deviceId;
+        const label = cam.label || `Camera ${i + 1}`;
+        // Prefer back camera by default
+        opt.textContent = label;
+        camSelect.appendChild(opt);
+      });
+      // Auto-select back/environment camera
+      const backIdx = cams.findIndex(c =>
+        /back|rear|environment/i.test(c.label)
+      );
+      if (backIdx !== -1) camSelect.selectedIndex = backIdx;
+      setStatus(`${cams.length} camera${cams.length > 1 ? 's' : ''} found`);
+    } catch (err) {
+      setStatus('Camera permission denied');
+      btnStart.disabled = true;
+    }
+  }
+
+  // ── Flash feedback ──
+  function doFlash() {
+    flashOverlay.classList.remove('flash');
+    void flashOverlay.offsetWidth;
+    flashOverlay.classList.add('flash');
+    try { if (navigator.vibrate) navigator.vibrate(40); } catch {}
+  }
+
+  // ── Show result ──
+  function showResult(text) {
+    const type = classify(text);
+    resultContent.innerHTML = sanitizeDisplay(text);
+    resultCard.classList.add('visible');
+
+    if (type === 'url') {
+      urlWarning.classList.add('visible');
+      btnOpen.style.display = '';
+      btnOpen.onclick = () => {
+        if (confirm(`Open this URL?\n\n${text}\n\nOnly proceed if you trust the source.`)) {
+          window.open(text, '_blank', 'noopener,noreferrer');
+        }
+      };
+    } else {
+      urlWarning.classList.remove('visible');
+      btnOpen.style.display = 'none';
+    }
+
+    addHistory(text, type);
+  }
+
+  // ── Copy ──
+  btnCopy.addEventListener('click', async () => {
+    const text = resultContent.textContent;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      btnCopy.textContent = 'Copied!';
+      setTimeout(() => { btnCopy.textContent = 'Copy'; }, 1800);
+    } catch {
+      btnCopy.textContent = 'Failed';
+      setTimeout(() => { btnCopy.textContent = 'Copy'; }, 1800);
+    }
+  });
+
+  // ── History ──
+  function addHistory(text, type) {
+    history.unshift({ text, type, ts: Date.now() });
+    if (history.length > 20) history.pop();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    historyList.innerHTML = '';
+    if (history.length === 0) {
+      historyList.appendChild(historyEmpty);
+      historyEmpty.style.display = '';
+      return;
+    }
+    history.forEach(item => {
+      const el = document.createElement('div');
+      el.className = 'history-item';
+      el.innerHTML = `
+        <span class="history-item-text">${sanitizeDisplay(item.text)}</span>
+        <span class="history-item-type">${item.type}</span>
+      `;
+      el.addEventListener('click', () => showResult(item.text));
+      historyList.appendChild(el);
+    });
+  }
+
+  btnClearHistory.addEventListener('click', () => {
+    history = [];
+    renderHistory();
+  });
+
+  // ── Start scanning ──
+  async function startScan() {
+    if (scanning) return;
+    const deviceId = camSelect.value;
+    if (!deviceId) { setStatus('Select a camera first'); return; }
+
+    try {
+      codeReader = new ZXingBrowser.BrowserQRCodeReader();
+      scanning   = true;
+      lastResult = '';
+
+      btnStart.disabled = true;
+      btnStop.disabled  = false;
+      idleOverlay.classList.add('hidden');
+      viewfinderWrap.classList.add('scanning');
+      setStatus('Scanning…');
+
+      const controls = await codeReader.decodeFromVideoDevice(
+        deviceId,
+        video,
+        (result, err) => {
+          if (!result) return;
+          const text = result.getText();
+          if (text === lastResult) return; // debounce duplicate
+          lastResult = text;
+
+          doFlash();
+          showResult(text);
+          setStatus('QR code detected');
+        }
+      );
+
+      // Store controls to stop later
+      codeReader._controls = controls;
+    } catch (err) {
+      scanning = false;
+      btnStart.disabled = false;
+      btnStop.disabled  = true;
+      viewfinderWrap.classList.remove('scanning');
+      idleOverlay.classList.remove('hidden');
+      setStatus('Error: ' + (err.message || 'Could not start camera'));
+      console.error(err);
+    }
+  }
+
+  // ── Stop scanning ──
+  function stopScan() {
+    if (!scanning) return;
+    try {
+      if (codeReader?._controls) codeReader._controls.stop();
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+        video.srcObject = null;
+      }
+    } catch {}
+    scanning   = false;
+    codeReader = null;
+    btnStart.disabled = false;
+    btnStop.disabled  = true;
+    viewfinderWrap.classList.remove('scanning');
+    idleOverlay.classList.remove('hidden');
+    setStatus('Stopped');
+  }
+
+  btnStart.addEventListener('click', startScan);
+  btnStop.addEventListener('click', stopScan);
+
+  // Stop on page hide (tab switch, lock screen)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && scanning) stopScan();
+  });
+
+  // ── Init ──
+  populateCameras();
+  renderHistory();
+
+})();
+</script>
+</body>
+</html>
